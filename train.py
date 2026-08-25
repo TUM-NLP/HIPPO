@@ -96,14 +96,6 @@ def get_wandb_run_id_from_checkpoint(checkpoint_dir, output_dir=None):
 def main():
     args = parser.parse_args()
 
-    # Fix for Phi models: Disable Dynamo compilation before model loading
-    # Phi models use LongRoPE which has a conditional check that Dynamo cannot trace
-    if args.model_type in ["phi", "phiu"]:
-        # Disable Dynamo compilation before Unsloth tries to compile
-        os.environ["TORCH_COMPILE_DISABLE"] = "1"
-        os.environ["TORCHDYNAMO_DISABLE"] = "1"
-        print("Warning: Disabled Dynamo compilation for Phi model due to LongRoPE compatibility")
-
     # Determine checkpoint path for resuming
     checkpoint_path = None
     wandb_run_id = None
@@ -154,32 +146,6 @@ def main():
         device_map = "auto",
         # token = "hf_...",      # use one if using gated models
     )
-
-    # Additional fix: Patch LongRoPE if model is already loaded with compilation
-    # This handles cases where Unsloth has already compiled the model
-    if args.model_type in ["phi", "phiu"]:
-        try:
-            import torch._dynamo as dynamo
-            # Suppress errors if compilation still happens
-            dynamo.config.suppress_errors = True
-            
-            # Patch the LongRoPE function to avoid data-dependent branching
-            from transformers import modeling_rope_utils
-            
-            def patched_longrope_frequency_update(self, position_ids, device=None):
-                """Patched version that always updates frequencies to avoid Dynamo issues"""
-                # Always update frequencies regardless of sequence length
-                # This is safe because the update is idempotent and only affects very long sequences
-                seq_len = torch.max(position_ids) + 1
-                # Always perform the update (removed conditional check)
-                if hasattr(self, '_update_freqs_for_longrope'):
-                    self._update_freqs_for_longrope(seq_len, device)
-            
-            # Replace the function
-            modeling_rope_utils.longrope_frequency_update = patched_longrope_frequency_update
-            print("Patched LongRoPE function to avoid Dynamo compilation issues")
-        except (ImportError, AttributeError) as e:
-            print(f"Note: Could not patch LongRoPE function: {e}")
 
     if not args.fft:
         model = FastLanguageModel.get_peft_model(
@@ -241,15 +207,7 @@ def main():
                     texts.append("")
                     continue
                 try:
-                    if args.model_type == "qwen_old":
-                        # append /no_think to user messages
-                        # for message in messages_list[i]:
-                        #     if message['role'] == "user":
-                        #         message['content'] = message['content'] + " /no_think"
-                        text = tokenizer.apply_chat_template(messages_list[i], tokenize=False, enable_thinking=False)
-                        text = text.replace("<think>\n\n</think>\n\n", "")
-                    else:
-                        text = tokenizer.apply_chat_template(messages_list[i], tokenize=False)
+                    text = tokenizer.apply_chat_template(messages_list[i], tokenize=False)
                     if text is None:
                         texts.append("")
                     else:
@@ -342,18 +300,9 @@ def main():
     if args.model_type == "qwen":
         instruction_part = "<|im_start|>user\n"
         response_part = "<|im_start|>assistant\n"
-    elif args.model_type == "qwen_old":
-        instruction_part = "<|im_start|>user\n"
-        response_part = "<|im_start|>assistant\n"#<think>\n\n</think>\n\n"
     elif args.model_type == "llama":
         instruction_part = "<|start_header_id|>user<|end_header_id|>\n\n"
         response_part = "<|start_header_id|>assistant<|end_header_id|>\n\n"
-    elif args.model_type == "phi":
-        instruction_part="<|im_start|>user<|im_sep|>"
-        response_part="<|im_start|>assistant<|im_sep|>"
-    elif args.model_type == "phiu":
-        instruction_part="<|user|>"
-        response_part="<|assistant|>"
     else:
         raise ValueError(f"Invalid model type: {args.model_type}")
 

@@ -60,7 +60,7 @@ def padding_collate_fn(batch, max_len=2048, skip_fields=[], add_labels=False, pa
     return padded_batch
 
 
-def preprocess_data(examples, tokenizer, args):
+def preprocess_data(examples, tokenizer):
     tokenized = {
         'input_ids1': [], 
         'input_ids2': [],
@@ -86,17 +86,8 @@ def preprocess_data(examples, tokenizer, args):
     for i in range(len(examples['messages'])):
         assert len(examples['messages'][i]) <= 12, f"Num messages = {len(examples['messages'][i])}"
         for j in range(6):
-            if j < len(examples['messages'][i]) // 2:            
-                if args.model_type == "gpt-oss":
-                    src = tokenizer.apply_chat_template(examples['messages'][i][:j*2+1], tokenize=False, add_generation_prompt=True)
-                    src = src + "<|channel|>final<|message|>"
-                    src = tokenizer.encode(src, add_special_tokens=False, return_tensors='pt')[0]
-                elif args.model_type == "qwen_old":
-                    # src_text = tokenizer.apply_chat_template(examples['messages'][i][:j*2+1], tokenize=False, enable_thinking=False, add_generation_prompt=True)
-                    # print(src_text)
-                    src = tokenizer.apply_chat_template(examples['messages'][i][:j*2+1], tokenize=True, enable_thinking=False, return_tensors='pt', add_generation_prompt=True)[0]
-                else:
-                    src = tokenizer.apply_chat_template(examples['messages'][i][:j*2+1], tokenize=True, return_tensors='pt', add_generation_prompt=True)[0]
+            if j < len(examples['messages'][i]) // 2:
+                src = tokenizer.apply_chat_template(examples['messages'][i][:j*2+1], tokenize=True, return_tensors='pt', add_generation_prompt=True)[0]
                 # src = torch.cat((src, label_token))
                 tgt = tokenizer.encode(examples['messages'][i][j*2+1]['content'], add_special_tokens=False, return_tensors='pt')[0]
             else:
@@ -128,14 +119,10 @@ def evaluate_hierarchical(model, tokenizer, dataloader, output_path=None, args=N
 
     eos_token = tokenizer.eos_token
 
-    if args.model_type == "qwen" or args.model_type == "qwen_old":
+    if args.model_type == "qwen":
         user_token = "<|im_start|>" if tokenizer.eos_token == "<|eot_id|>" else "<|start_header_id|>"
     elif args.model_type == "llama":
         user_token = "<|start_header_id|>"
-    elif args.model_type == "phi":
-        user_token = "<|im_start|>user<|im_sep|>"
-    elif args.model_type == "gpt-oss":
-        user_token = "<|end|><|start|>assistant<|channel|>"
     else:
         raise ValueError(f"Invalid model type: {args.model_type}")
 
@@ -173,7 +160,6 @@ def evaluate_hierarchical(model, tokenizer, dataloader, output_path=None, args=N
                 return_dict_in_generate=True, 
                 output_logits=True,
                 pad_token_id=tokenizer.pad_token_id,
-                use_cache=args.model_type != "gpt-oss",  # Disable KV cache for GPT-OSS to avoid CUDA graph issues with dynamic batch sizes
                 # temperature=0.7, # does not change anything
                 # top_p=0.8,
                 # top_k=20,
@@ -251,13 +237,6 @@ def main():
     
     args = parser.parse_args()
 
-    if args.model_type in ["phi", "phiu"]:
-        # Disable Dynamo compilation before Unsloth tries to compile
-        os.environ["TORCH_COMPILE_DISABLE"] = "1"
-        os.environ["TORCHDYNAMO_DISABLE"] = "1"
-        print("Warning: Disabled Dynamo compilation for Phi model due to LongRoPE compatibility")
-
-
     # tokenizer = AutoTokenizer.from_pretrained(args.model_path)
     # model = AutoModelForCausalLM.from_pretrained(args.model_path).to("cuda:0")
 
@@ -266,31 +245,6 @@ def main():
         max_seq_length = 2048,
         load_in_4bit = True,
     )
-
-    if args.model_type in ["phi", "phiu"]:
-        try:
-            import torch._dynamo as dynamo
-            # Suppress errors if compilation still happens
-            dynamo.config.suppress_errors = True
-            
-            # Patch the LongRoPE function to avoid data-dependent branching
-            from transformers import modeling_rope_utils
-            
-            def patched_longrope_frequency_update(self, position_ids, device=None):
-                """Patched version that always updates frequencies to avoid Dynamo issues"""
-                # Always update frequencies regardless of sequence length
-                # This is safe because the update is idempotent and only affects very long sequences
-                seq_len = torch.max(position_ids) + 1
-                # Always perform the update (removed conditional check)
-                if hasattr(self, '_update_freqs_for_longrope'):
-                    self._update_freqs_for_longrope(seq_len, device)
-            
-            # Replace the function
-            modeling_rope_utils.longrope_frequency_update = patched_longrope_frequency_update
-            print("Patched LongRoPE function to avoid Dynamo compilation issues")
-        except (ImportError, AttributeError) as e:
-            print(f"Note: Could not patch LongRoPE function: {e}")
-
 
     dataset = load_from_disk(args.dataset)['test']
     # print(dataset.unique("dataset"))
@@ -307,25 +261,8 @@ def main():
     if 'label' in dataset.column_names:
         dataset = dataset.remove_columns(["label"])
 
-    if args.model_type == "gpt-oss":
-        def add_thinking_to_messages(examples):
-            new_examples = {
-                'messages': [],
-            }
-            for i in range(len(examples['messages'])):
-                new_ex_message = []
-                for message in examples['messages'][i]:
-                    message['thinking'] = "" # Add thinking to messages
-                    new_ex_message.append(message)
-                if len(new_ex_message) == 0:
-                    new_ex_message = [{"role": "user", "content": ""}]
-                new_examples['messages'].append(new_ex_message)
-            return new_examples
-
-        dataset = dataset.map(add_thinking_to_messages, batched=True, num_proc=10)
-
     dataset = dataset.map(preprocess_data, 
-        fn_kwargs={'tokenizer': tokenizer, 'args': args}, 
+        fn_kwargs={'tokenizer': tokenizer}, 
         batched=True)
 
     print(dataset)
