@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HIPPO: Instruction-tuned LLMs for Robust Harmful Content Mitigation</title>
+<meta name="description" content="HIPPO unifies 36 hate speech datasets to instruction-tune a generalist LLM for hate speech mitigation, reaching state-of-the-art in-domain performance and strong cross-domain and cross-lingual generalization. EMNLP 2026 (Main).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #fbfaf8;
+    --bg-alt: #f2efe9;
+    --surface: #ffffff;
+    --border: #e4ded3;
+    --text: #211d17;
+    --text-dim: #5b5648;
+    --text-faint: #8a8474;
+    --accent: #c0374a;
+    --accent-dim: #f6e3e5;
+    --accent-ink: #7a1f2c;
+    --teal: #0f6e63;
+    --teal-dim: #dcf0ea;
+    --navy: #16324f;
+    --navy-dim: #e7edf3;
+    --gold: #b3781a;
+    --gold-dim: #f7ecd7;
+    --code-bg: #16324f;
+    --shadow: 0 1px 2px rgba(20,16,8,0.04), 0 8px 24px -12px rgba(20,16,8,0.12);
+    --radius: 14px;
+    --hl-bg: #cfe8ff;
+    --hl-ink: #0a3d63;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg: #15130f;
+      --bg-alt: #1c1a15;
+      --surface: #201e18;
+      --border: #38352c;
+      --text: #f1ede2;
+      --text-dim: #c9c3b3;
+      --text-faint: #8f8a78;
+      --accent: #e8788a;
+      --accent-dim: #3a2126;
+      --accent-ink: #f4a9b5;
+      --teal: #4fc9b8;
+      --teal-dim: #163330;
+      --navy: #a9c3dd;
+      --navy-dim: #1c2a38;
+      --gold: #e0b869;
+      --gold-dim: #362a12;
+      --code-bg: #0e1b2b;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+      --hl-bg: #123a52;
+      --hl-ink: #bfe2ff;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: #15130f;
+    --bg-alt: #1c1a15;
+    --surface: #201e18;
+    --border: #38352c;
+    --text: #f1ede2;
+    --text-dim: #c9c3b3;
+    --text-faint: #8f8a78;
+    --accent: #e8788a;
+    --accent-dim: #3a2126;
+    --accent-ink: #f4a9b5;
+    --teal: #4fc9b8;
+    --teal-dim: #163330;
+    --navy: #a9c3dd;
+    --navy-dim: #1c2a38;
+    --gold: #e0b869;
+    --gold-dim: #362a12;
+    --code-bg: #0e1b2b;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+    --hl-bg: #123a52;
+    --hl-ink: #bfe2ff;
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:0 24px;}
+  a{color:var(--accent-ink);}
+  code, .mono{font-family:'JetBrains Mono', ui-monospace, monospace;}
+
+  /* ---------- Top nav ---------- */
+  .topnav{
+    position:sticky; top:0; z-index:50; background:color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter:blur(10px); border-bottom:1px solid var(--border);
+  }
+  .topnav-inner{
+    max-width:1080px; margin:0 auto; padding:0 24px; height:56px;
+    display:flex; align-items:center; gap:22px; overflow-x:auto;
+  }
+  .topnav .brand{font-weight:800; letter-spacing:.02em; color:var(--text); flex-shrink:0; display:flex; align-items:center; gap:8px; font-size:15px;}
+  .topnav .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;}
+  .topnav nav{display:flex; gap:18px; flex-shrink:0;}
+  .topnav nav a{color:var(--text-dim); text-decoration:none; font-size:13.5px; font-weight:500; white-space:nowrap;}
+  .topnav nav a:hover{color:var(--accent-ink);}
+
+  /* ---------- Hero ---------- */
+  .hero{padding:64px 0 40px;}
+  .badge-row{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:22px;}
+  .badge{
+    display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:999px;
+    font-size:12.5px; font-weight:600; border:1px solid var(--border); color:var(--text-dim); background:var(--surface);
+  }
+  .badge.emnlp{background:var(--teal-dim); color:var(--teal); border-color:transparent;}
+  .badge.arxiv{background:var(--gold-dim); color:var(--gold); border-color:transparent;}
+
+  h1.title{
+    font-size:clamp(28px, 4vw, 42px); line-height:1.15; font-weight:800; letter-spacing:-0.015em;
+    margin:0 0 22px; max-width:880px;
+  }
+  .authors{font-size:17px; margin:0 0 6px; color:var(--text);}
+  .authors a{text-decoration:none; color:var(--text); border-bottom:1px dashed var(--text-faint);}
+  .authors a:hover{color:var(--accent-ink); border-color:var(--accent-ink);}
+  .affils{color:var(--text-dim); font-size:14px; margin:0 0 4px;}
+  .affils sup{margin-right:1px;}
+  .emails{color:var(--text-faint); font-size:13px; margin:0 0 28px;}
+  .emails a{color:var(--text-faint);}
+
+  .cta-row{display:flex; flex-wrap:wrap; gap:12px; margin-bottom:8px;}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px; padding:10px 18px; border-radius:10px;
+    font-weight:600; font-size:14.5px; text-decoration:none; border:1px solid var(--border);
+    color:var(--text); background:var(--surface); box-shadow:var(--shadow); transition:transform .12s ease, border-color .12s ease;
+  }
+  .btn:hover{transform:translateY(-1px); border-color:var(--accent);}
+  .btn.primary{background:var(--navy); border-color:var(--navy); color:#fff;}
+  .btn.primary:hover{opacity:.92;}
+  .btn svg{width:16px; height:16px; flex-shrink:0;}
+
+  /* ---------- Stat strip ---------- */
+  .stats{
+    display:grid; grid-template-columns:repeat(5,1fr); gap:1px; background:var(--border);
+    border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; margin:40px 0 0;
+  }
+  .stat{background:var(--surface); padding:18px 14px; text-align:center;}
+  .stat .num{font-size:22px; font-weight:800; color:var(--accent-ink); letter-spacing:-0.02em;}
+  .stat .lbl{font-size:11.5px; color:var(--text-faint); margin-top:3px; text-transform:uppercase; letter-spacing:.04em;}
+  @media (max-width:720px){ .stats{grid-template-columns:repeat(2,1fr);} }
+
+  /* ---------- Sections ---------- */
+  section{padding:56px 0;}
+  section.alt{background:var(--bg-alt); border-top:1px solid var(--border); border-bottom:1px solid var(--border);}
+  .eyebrow{
+    font-size:12.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--accent-ink); margin:0 0 10px;
+  }
+  h2{font-size:26px; font-weight:800; letter-spacing:-0.01em; margin:0 0 18px;}
+  h3{font-size:18px; font-weight:700; margin:30px 0 10px;}
+  p{color:var(--text-dim); margin:0 0 14px;}
+  .lede{font-size:17px; color:var(--text); max-width:820px;}
+
+  .figure{margin:26px 0; text-align:center;}
+  .figure img{max-width:100%; border-radius:10px; border:1px solid var(--border); background:#fff; box-shadow:var(--shadow);}
+  .figure figcaption{font-size:13px; color:var(--text-faint); margin-top:10px; max-width:760px; margin-left:auto; margin-right:auto;}
+  .figure figcaption b{color:var(--text-dim);}
+
+  .two-col{display:grid; grid-template-columns:1.1fr 0.9fr; gap:40px; align-items:center;}
+  @media (max-width:840px){ .two-col{grid-template-columns:1fr;} }
+
+  .name-pill{
+    display:inline-block; background:var(--accent-dim); color:var(--accent-ink); border-radius:8px;
+    padding:0 6px; font-weight:700;
+  }
+
+  /* ---------- Abstract ---------- */
+  .abstract-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:28px 30px; box-shadow:var(--shadow);
+  }
+  .abstract-card p{color:var(--text); font-size:15.5px; margin:0;}
+
+  /* ---------- RQ cards ---------- */
+  .rq-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:24px 0 0;}
+  @media (max-width:900px){ .rq-grid{grid-template-columns:repeat(2,1fr);} }
+  .rq-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 16px 18px;
+  }
+  .rq-card .rq-tag{font-size:11px; font-weight:800; color:var(--accent-ink); letter-spacing:.04em;}
+  .rq-card p{font-size:13.5px; color:var(--text-dim); margin:6px 0 0;}
+
+  /* ---------- Method steps ---------- */
+  .steps{list-style:none; margin:20px 0 0; padding:0; display:grid; gap:14px;}
+  .steps li{
+    display:grid; grid-template-columns:34px 1fr; gap:14px; background:var(--surface);
+    border:1px solid var(--border); border-radius:12px; padding:16px 18px;
+  }
+  .steps .n{
+    width:34px; height:34px; border-radius:50%; background:var(--navy); color:#fff; font-weight:800;
+    display:flex; align-items:center; justify-content:center; font-size:14px;
+  }
+  .steps h4{margin:0 0 4px; font-size:15px;}
+  .steps p{margin:0; font-size:13.5px;}
+
+  code.prompt-line{display:block; background:var(--code-bg); color:#dce8f5; padding:14px 16px; border-radius:10px; font-size:12.5px; margin:14px 0; overflow-x:auto; white-space:pre;}
+  code.prompt-line .u{color:#7fd0ff;}
+  code.prompt-line .a{color:#8ee6b0;}
+
+  /* ---------- Tabs ---------- */
+  .tabbar{display:flex; gap:8px; flex-wrap:wrap; margin:24px 0 4px; border-bottom:1px solid var(--border); padding-bottom:0;}
+  .tabbtn{
+    appearance:none; border:1px solid transparent; background:transparent; padding:10px 16px; font-size:14px;
+    font-weight:600; color:var(--text-faint); cursor:pointer; border-radius:8px 8px 0 0; position:relative; top:1px;
+  }
+  .tabbtn.active{color:var(--accent-ink); border:1px solid var(--border); border-bottom-color:var(--surface); background:var(--surface);}
+  .tabpanel{display:none;}
+  .tabpanel.active{display:block;}
+
+  .table-scroll{overflow-x:auto; border:1px solid var(--border); border-radius:12px; background:var(--surface); box-shadow:var(--shadow); margin-top:16px;}
+  table{border-collapse:collapse; width:100%; font-size:13.5px; min-width:640px;}
+  thead th{
+    position:sticky; top:0; background:var(--navy-dim); color:var(--navy); text-align:left; font-weight:700;
+    padding:10px 14px; border-bottom:1px solid var(--border); white-space:nowrap; font-size:12.5px; text-transform:uppercase; letter-spacing:.03em;
+  }
+  tbody td{padding:8px 14px; border-bottom:1px solid var(--border); color:var(--text-dim); white-space:nowrap;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr.avg-row td{background:var(--bg-alt); font-weight:700; color:var(--text);}
+  td.num{font-family:'JetBrains Mono', monospace; text-align:right;}
+  td.dataset-name{color:var(--text); font-weight:600;}
+  .best{font-weight:800; color:var(--text);}
+  .beats{background:var(--hl-bg); color:var(--hl-ink); border-radius:5px; padding:2px 6px; font-weight:700; display:inline-block; min-width:44px; text-align:center;}
+  .src a{color:var(--text-faint); text-decoration:none; border-bottom:1px dotted var(--border);}
+  .src a:hover{color:var(--accent-ink);}
+
+  .legend{display:flex; flex-wrap:wrap; gap:16px; margin:14px 0 0; font-size:12.5px; color:var(--text-faint);}
+  .legend span{display:inline-flex; align-items:center; gap:6px;}
+  .legend i{width:14px; height:14px; border-radius:4px; display:inline-block;}
+  .legend i.b1{background:var(--hl-bg);}
+  .legend i.b2{background:transparent; border:1.5px solid var(--text); position:relative;}
+
+  .takeaway-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:20px;}
+  @media (max-width:840px){ .takeaway-grid{grid-template-columns:1fr;} }
+  .takeaway{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:10px; padding:16px 18px;}
+  .takeaway .big{font-size:24px; font-weight:800; color:var(--accent-ink);}
+  .takeaway p{margin:6px 0 0; font-size:13.5px;}
+
+  /* ---------- Datasets ---------- */
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 0;}
+  .chip{
+    background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:6px 13px;
+    font-size:12.5px; color:var(--text-dim); font-weight:500;
+  }
+  .chip b{color:var(--text);}
+
+  /* ---------- License / ethics ---------- */
+  .callout{
+    background:var(--gold-dim); border:1px solid transparent; border-left:4px solid var(--gold);
+    border-radius:10px; padding:18px 20px; margin-top:18px;
+  }
+  .callout p{color:var(--text); margin:0; font-size:14px;}
+  .callout p+p{margin-top:10px;}
+
+  /* ---------- Citation ---------- */
+  .cite-box{
+    background:var(--code-bg); border-radius:12px; padding:22px 24px; position:relative; box-shadow:var(--shadow);
+  }
+  .cite-box pre{margin:0; color:#dce8f5; font-size:12.8px; line-height:1.65; overflow-x:auto; font-family:'JetBrains Mono', monospace;}
+  .copy-btn{
+    position:absolute; top:14px; right:14px; background:rgba(255,255,255,.08); color:#dce8f5; border:1px solid rgba(255,255,255,.18);
+    border-radius:7px; padding:6px 12px; font-size:12px; font-weight:600; cursor:pointer;
+  }
+  .copy-btn:hover{background:rgba(255,255,255,.15);}
+  .cite-note{font-size:12.5px; color:var(--text-faint); margin-top:10px;}
+
+  footer{padding:44px 0 60px; border-top:1px solid var(--border);}
+  .footer-grid{display:flex; justify-content:space-between; flex-wrap:wrap; gap:24px; align-items:flex-start;}
+  .foot-affils{font-size:13px; color:var(--text-faint); line-height:1.8;}
+  .foot-links{display:flex; gap:18px; flex-wrap:wrap;}
+  .foot-links a{color:var(--text-dim); text-decoration:none; font-size:13.5px; font-weight:500;}
+  .foot-links a:hover{color:var(--accent-ink);}
+  .foot-copy{font-size:12px; color:var(--text-faint); margin-top:28px;}
+
+  ::selection{background:var(--hl-bg); color:var(--hl-ink);}
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="topnav-inner">
+    <div class="brand"><span class="dot"></span>HIPPO</div>
+    <nav>
+      <a href="#overview">Overview</a>
+      <a href="#abstract">Abstract</a>
+      <a href="#method">Method</a>
+      <a href="#results">Results</a>
+      <a href="#crosslingual">Cross-lingual</a>
+      <a href="#datasets">Datasets</a>
+      <a href="#citation">Citation</a>
+    </nav>
+  </div>
+</div>
+
+<header class="hero wrap">
+  <div class="badge-row">
+    <span class="badge emnlp">🏆 Accepted to EMNLP 2026 &mdash; Main Conference</span>
+    <span class="badge arxiv">arXiv:2608.25605</span>
+    <span class="badge">cs.CL</span>
+    <span class="badge">License: OpenRAIL&#8209;S</span>
+  </div>
+
+  <h1 class="title">From Specialization to Generalization: Instruction&#8209;tuned LLMs for Robust Harmful Content Mitigation</h1>
+
+  <p class="authors">
+    <a href="mailto:lukas.edman@tum.de">Lukas Edman</a><sup>1,2</sup> &nbsp;
+    <a href="mailto:daryna.dementieva@tum.de">Daryna Dementieva</a><sup>1,2</sup> &nbsp;
+    Alexander Fraser<sup>1,2,3</sup>
+  </p>
+  <p class="affils">
+    <sup>1</sup>School of Computation, Information and Technology, TU Munich &nbsp;&middot;&nbsp;
+    <sup>2</sup>Munich Center for Machine Learning &nbsp;&middot;&nbsp;
+    <sup>3</sup>Munich Data Science Institute
+  </p>
+  <p class="emails"><a href="mailto:lukas.edman@tum.de">lukas.edman@tum.de</a> &nbsp;&bull;&nbsp; <a href="mailto:daryna.dementieva@tum.de">daryna.dementieva@tum.de</a></p>
+
+  <div class="cta-row">
+    <a class="btn primary" href="https://arxiv.org/abs/2608.25605" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13m0 0-4-4m4 4 4-4M5 21h14"/></svg>
+      Paper (arXiv)
+    </a>
+    <a class="btn" href="https://arxiv.org/pdf/2608.25605" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+      PDF
+    </a>
+    <a class="btn" href="https://github.com/TUM-NLP/HIPPO" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.9 5.3.9 11.6c0 5 3.2 9.3 7.8 10.8.6.1.8-.2.8-.6v-2.2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2.9-.3 1.9-.4 3-.4s2 .1 3 .4c2.3-1.6 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.8-5.8 7.8-10.8C23.1 5.3 18.3.5 12 .5Z"/></svg>
+      Code &amp; Models
+    </a>
+    <a class="btn" href="#citation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>
+      Cite
+    </a>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="num">36</div><div class="lbl">Unified datasets</div></div>
+    <div class="stat"><div class="num">649,761</div><div class="lbl">Training examples</div></div>
+    <div class="stat"><div class="num">61</div><div class="lbl">(Sub)tasks</div></div>
+    <div class="stat"><div class="num">3</div><div class="lbl">Model scales (0.6B&ndash;32B)</div></div>
+    <div class="stat"><div class="num">11</div><div class="lbl">Languages evaluated</div></div>
+  </div>
+</header>
+
+<section id="overview">
+  <div class="wrap">
+    <p class="eyebrow">The idea</p>
+    <h2>Can one generalist LLM replace a zoo of specialist hate-speech classifiers?</h2>
+    <div class="two-col">
+      <div>
+        <p class="lede">Hate speech research has produced dozens of datasets and just as many narrow, task-specific classifiers &mdash; typically BERT-style encoders trained one dataset at a time. We ask a simpler question: what if, instead, we <b>unify</b> 36 of these datasets into one instruction-formatted corpus and fine-tune a single generalist LLM on all of them at once?</p>
+        <p>The result is <span class="name-pill">HIPPO</span> &mdash; <b>H</b>armful <b>I</b>nput, <b>P</b>ositive and <b>P</b>roductive <b>O</b>utput &mdash; an instruction-tuned model based on <code>Qwen3-4B-Instruct-2507</code>. Despite being a fraction of the size of many competing systems (some baselines reach 62B&ndash;671B parameters), HIPPO matches or beats task-specific state-of-the-art on the majority of evaluated tasks, and generalizes far better to unseen domains, label schemes, and languages than encoder-based specialists typically do.</p>
+      </div>
+      <figure class="figure" style="margin:0;">
+        <img src="assets/figure1_hippo_concept.png" alt="Conceptual diagram: several specialist BERT/Llama classifiers each producing one narrow judgement about a harmful text, versus a single generalist HIPPO model producing the full set of judgements at once.">
+        <figcaption><b>Figure 1.</b> Specialist encoders (left) each answer one narrow question about a piece of text. HIPPO (right) is one generalist model that answers all of them.</figcaption>
+      </figure>
+    </div>
+
+    <div class="rq-grid">
+      <div class="rq-card"><div class="rq-tag">RQ1</div><p>How does an instruction-tuned generalist compare to strong task-specific baselines for English hate speech tasks?</p></div>
+      <div class="rq-card"><div class="rq-tag">RQ2</div><p>Does instruction tuning outperform zero-/few-shot prompting of the same base LLM?</p></div>
+      <div class="rq-card"><div class="rq-tag">RQ3</div><p>Can the tuned model generalize to previously unseen hate speech domains and label schemes?</p></div>
+      <div class="rq-card"><div class="rq-tag">RQ4</div><p>Can English-only instruction tuning support cross-lingual generalization?</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="abstract" class="alt">
+  <div class="wrap">
+    <p class="eyebrow">Abstract</p>
+    <div class="abstract-card">
+      <p>Large language models (LLMs) demonstrate impressive performance across a wide range of general NLP tasks; however, their effectiveness in sensitive domains, such as hate speech detection, remains less clear. Prior studies comparing prompted LLMs with state-of-the-art encoder-based models (e.g., BERT variants) have shown only marginal gains, suggesting that LLMs may not excel in hate speech detection or mitigation. In this work, we revisit this question through the lens of instruction tuning. By thoroughly unifying 36 English hate speech datasets spanning multiple labeling schemes, we fine-tune a generalist LLM, based on Qwen3, specifically for hate speech mitigation. Our results demonstrate not only state-of-the-art performance on in-domain benchmarks but also substantial improvements in cross-domain and cross-lingual generalization&mdash;areas where encoder-based specialist classifiers often struggle.</p>
+    </div>
+  </div>
+</section>
+
+<section id="method">
+  <div class="wrap">
+    <p class="eyebrow">Method</p>
+    <h2>Unify, instructify, fine-tune</h2>
+    <p class="lede">We source 36 English hate-speech and toxicity datasets spanning four task families &mdash; binary, multiclass, multilabel, and open-ended generation &mdash; and convert every one of them into a shared conversational instruction format before deduplicating and fine-tuning on the result.</p>
+
+    <ol class="steps">
+      <li>
+        <span class="n">1</span>
+        <div>
+          <h4>Collate 36 datasets across 4 task types</h4>
+          <p>Binary (hateful / not), multiclass (e.g. target group), multilabel, and generative tasks (counter-narrative dialogue, text detoxification, toxic span extraction) &mdash; sourced from Twitter/X, Reddit, Gab, Facebook, YouTube, Civil Comments, Wikipedia, and more.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">2</span>
+        <div>
+          <h4>Convert every task into a shared instruction format</h4>
+          <p>Each example becomes a user/assistant exchange. Hierarchical datasets (e.g. hateful&nbsp;&rarr;&nbsp;target&nbsp;&rarr;&nbsp;severity) are unrolled into multi-turn conversations; classes are referred to by letter (A, B, C&hellip;) rather than name, which the authors find substantially boosts performance.</p>
+          <code class="prompt-line"><span class="u">User:</span> You are an expert on hate speech, and you are tasked with answering questions about the following text. Respond only with the answer, no other text: {text}
+Should the text be classified as {category}? Answer with 'yes' or 'no'.
+<span class="a">Assistant:</span> {yes / no}</code>
+        </div>
+      </li>
+      <li>
+        <span class="n">3</span>
+        <div>
+          <h4>Deduplicate across sources</h4>
+          <p>Datasets scraped from the same platforms create overlapping examples. After removing text/label duplicates and resolving cross-dataset label conflicts, the corpus shrinks by 3.73% to a final <b>649,761</b> training examples across <b>61</b> (sub)tasks.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">4</span>
+        <div>
+          <h4>QLoRA fine-tune at three scales</h4>
+          <p>The base model is <code>Qwen3-4B-Instruct-2507</code>, fine-tuned with QLoRA on assistant-token loss only. The main <b>HIPPO</b> model uses 4B parameters to keep compute modest (~1 day on one H100); 0.6B and 32B variants are trained to study scaling (~10 hours and ~4 days respectively).</p>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section id="results" class="alt">
+  <div class="wrap">
+    <p class="eyebrow">Results</p>
+    <h2>HIPPO vs. specialist and closed-source baselines</h2>
+    <p class="lede">All scores are macro-F1 (see paper for task-specific exceptions: ToxicSpans uses character-level span-overlap F1, Jigsaw averages per-label F1, ParaDetox uses a joint style-transfer/content/fluency score). <span class="beats" style="margin:0 4px;">shaded</span> cells beat the state-of-the-art reference; <b>bold</b> marks the best score in the row.</p>
+
+    <div class="takeaway-grid">
+      <div class="takeaway"><div class="big">14 / 17</div><p>tasks where the single unified HIPPO model beats training a separate model per dataset.</p></div>
+      <div class="takeaway"><div class="big">7 / 17</div><p>tasks where a 4B HIPPO beats the best <em>published, often much larger</em> task-specific system (up to 671B parameters).</p></div>
+      <div class="takeaway"><div class="big">70.3 avg F1</div><p>vs. 68.0 (individually-trained models), 55.3 (GPT-5-mini), and 68.5 (literature best) &mdash; at just 4B parameters.</p></div>
+    </div>
+
+    <div class="tabbar" role="tablist">
+      <button class="tabbtn active" data-tab="t2">Table 2 &middot; Main comparison</button>
+      <button class="tabbtn" data-tab="t3">Table 3 &middot; Model scale</button>
+      <button class="tabbtn" data-tab="t4">Table 4 &middot; Zero-shot &rarr; LOO &rarr; Full</button>
+    </div>
+
+    <!-- TABLE 2 -->
+    <div class="tabpanel active" id="t2">
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>Dataset</th><th>Type</th><th style="text-align:right">HIPPO</th><th style="text-align:right">Indiv.</th><th style="text-align:right">GPT-5-mini</th><th style="text-align:right">Best (lit.)</th><th>Best Arch.</th><th>Source</th>
+          </tr></thead>
+          <tbody id="t2body"></tbody>
+        </table>
+      </div>
+      <div class="legend"><span><i class="b1"></i> best score in the row</span><span>HIPPO = unified 4B model &middot; Indiv. = one model trained per dataset &middot; Best (lit.) = strongest published task-specific system</span></div>
+    </div>
+
+    <!-- TABLE 3 -->
+    <div class="tabpanel" id="t3">
+      <p style="margin-top:16px;">Effectiveness of instruction tuning across model scale, compared to the literature state-of-the-art. Shaded cells outperform the SOTA; the 32B model wins outright on 11 of 17 tasks.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>Dataset</th><th style="text-align:right">0.6B</th><th style="text-align:right">4B</th><th style="text-align:right">32B</th><th style="text-align:right">Best (lit.)</th>
+          </tr></thead>
+          <tbody id="t3body"></tbody>
+        </table>
+      </div>
+      <div class="legend"><span><i class="b1"></i> outperforms SOTA</span><span><b>bold</b> = best of the three HIPPO scales</span></div>
+    </div>
+
+    <!-- TABLE 4 -->
+    <div class="tabpanel" id="t4">
+      <p style="margin-top:16px;">Zero-shot prompting of the base model vs. leave-one-out (LOO &mdash; trained on the other 35 datasets, tested on the held-out one) vs. the fully unified HIPPO. LOO isolates true cross-task generalization: of 17 held-out tasks, 11 improve over zero-shot purely from training on <em>other</em> hate-speech tasks.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>Dataset</th><th style="text-align:right">Zero-shot</th><th style="text-align:right">Leave-one-out</th><th style="text-align:right">Full HIPPO</th>
+          </tr></thead>
+          <tbody id="t4body"></tbody>
+        </table>
+      </div>
+      <div class="legend"><span><i class="b1"></i> outperforms zero-shot</span><span><b>bold</b> = best of the three columns</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="crosslingual">
+  <div class="wrap">
+    <p class="eyebrow">RQ4</p>
+    <h2>Cross-lingual transfer from English-only training</h2>
+    <p class="lede">HIPPO is trained exclusively on English data. Since its Qwen3 backbone is pretrained multilingually, the paper asks whether instruction tuning damages or helps non-English hate speech processing &mdash; testing zero-shot, a minimally-tuned (1k examples/dataset) and the fully-tuned model across classification, generation, and functional (HateCheck) tasks in 11 languages.</p>
+
+    <div class="figure">
+      <img src="assets/figure2_crosslingual.png" alt="Three grouped bar charts comparing zero-shot, minimally-trained (small), and fully-trained HIPPO across classification tasks, HateCheck functional tests, and ParaDetox detoxification, each broken down by language.">
+      <figcaption><b>Figure 2.</b> Cross-lingual and functional performance of the zero-shot, minimally-trained, and fully-trained HIPPO. Full training clearly helps generation (ParaDetox) transfer, even though not a single non-English example was seen in training.</figcaption>
+    </div>
+
+    <div class="figure">
+      <img src="assets/figure3_hatecheck.png" alt="Heatmap of HateCheck accuracy across hateful and non-hateful functionalities for 11 languages, showing near-perfect performance on non-hateful content across all languages, and degrading performance on hateful functionalities for lower-resource languages, especially Arabic and Hindi.">
+      <figcaption><b>Figure 3.</b> Fully-trained HIPPO on all HateCheck functionalities &times; languages (accuracy %). Above the black line: hateful functionalities; below: non-hateful. Performance on non-hateful content stays near-perfect across languages, while hateful-functionality accuracy degrades most for Arabic and Hindi &mdash; likely reflecting script and pretraining-data disparities rather than the English-only fine-tuning itself.</figcaption>
+    </div>
+  </div>
+</section>
+
+<section id="datasets" class="alt">
+  <div class="wrap">
+    <p class="eyebrow">Data</p>
+    <h2>36 datasets in, 9 held out for evaluation</h2>
+    <p class="lede">All 36 datasets are unified for training (after deduplication: 649,761 examples, 61 subtasks). Nine of them &mdash; chosen for having a clean, reproducible train/test split &mdash; are held out as the evaluation superset spanning all four task categories.</p>
+
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Dataset</th><th>Attribution</th><th style="text-align:right">Train</th><th style="text-align:right">Test</th><th>Domain</th><th>Label type</th><th style="text-align:right">Subtasks</th></tr></thead>
+        <tbody>
+          <tr><td class="dataset-name">AMI18</td><td class="src">Fersini et al. (2018)</td><td class="num">3,998</td><td class="num">1,000</td><td>Twitter</td><td>Hierarchical</td><td class="num">3</td></tr>
+          <tr><td class="dataset-name">EDOS</td><td class="src">Kirk et al. (2023)</td><td class="num">13,998</td><td class="num">2,000</td><td>Reddit, Gab</td><td>Hierarchical</td><td class="num">3</td></tr>
+          <tr><td class="dataset-name">HASOC19</td><td class="src">Mandl et al. (2019)</td><td class="num">5,817</td><td class="num">1,153</td><td>Twitter, Facebook</td><td>Hierarchical</td><td class="num">3</td></tr>
+          <tr><td class="dataset-name">HatEval19</td><td class="src">Basile et al. (2019)</td><td class="num">8,992</td><td class="num">2,971</td><td>Twitter</td><td>Hierarchical</td><td class="num">3</td></tr>
+          <tr><td class="dataset-name">HateXplain</td><td class="src">Mathew et al. (2021)</td><td class="num">15,348</td><td class="num">1,924</td><td>Twitter, Gab</td><td>Hierarchical</td><td class="num">3</td></tr>
+          <tr><td class="dataset-name">Jigsaw</td><td class="src">Cjadams et al. (2017)</td><td class="num">159,529</td><td class="num">63,978</td><td>Civil Comments</td><td>Multilabel</td><td class="num">1</td></tr>
+          <tr><td class="dataset-name">OffensEval20</td><td class="src">Zampieri et al. (2019)</td><td class="num">13,187</td><td class="num">5,309</td><td>Twitter</td><td>Hierarchical</td><td class="num">3</td></tr>
+          <tr><td class="dataset-name">ParaDetox</td><td class="src">Logacheva et al. (2022)</td><td class="num">11,927</td><td class="num">600</td><td>Twitter, Reddit, CC</td><td>Generation</td><td class="num">1</td></tr>
+          <tr><td class="dataset-name">ToxicSpans</td><td class="src">Pavlopoulos et al. (2022; 2021)</td><td class="num">7,931</td><td class="num">2,000</td><td>Civil Comments</td><td>Generation</td><td class="num">1</td></tr>
+          <tr class="avg-row"><td>All 36 datasets, total</td><td></td><td class="num">649,761</td><td class="num">80,935</td><td></td><td></td><td class="num">61</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="chips">
+      <span class="chip"><b>+27</b> more training-only sources</span>
+      <span class="chip">CAD &middot; CAT-LARGE &middot; CONAN &middot; ConvAbuse &middot; DialoCONAN &middot; EAP &middot; ETHOS &middot; FoxCom &middot; GHC &middot; HSOL</span>
+      <span class="chip">ImplicitHate &middot; Intervene &middot; LargeScaleAbuse &middot; LargeScaleXDomain &middot; MeasuringHate &middot; Multitarget-CONAN</span>
+      <span class="chip">NewsHate &middot; ReligiousHate &middot; SlurCorpus &middot; Stormfront &middot; SWAD &middot; ToxiCR &middot; TwitterCRT &middot; TwitterExpert &middot; TwitterSA &middot; USElect</span>
+    </div>
+    <p style="margin-top:14px; font-size:13px; color:var(--text-faint);">Full per-dataset licenses and instruction templates are listed in the paper's appendices.</p>
+  </div>
+</section>
+
+<section id="responsible">
+  <div class="wrap">
+    <p class="eyebrow">Responsible use</p>
+    <h2>License &amp; intended use</h2>
+    <div class="callout">
+      <p><b>Code and model weights are released under the OpenRAIL&#8209;S license</b>, which restricts use of the models to responsible, socially beneficial applications.</p>
+      <p>HIPPO is intended to support content moderation, not to replace it: its outputs are meant as a recommendation to human moderators and platform-safety pipelines, not a final, unappealable decision. The authors emphasize that effective moderation requires sustained, community-centered research, and that moderation policy should remain a human decision informed by social context.</p>
+    </div>
+  </div>
+</section>
+
+<section id="citation" class="alt">
+  <div class="wrap">
+    <p class="eyebrow">Citation</p>
+    <h2>BibTeX</h2>
+    <div class="cite-box">
+      <button class="copy-btn" id="copyBtn">Copy</button>
+      <pre id="bibtex">@inproceedings{edman2026hippo,
+  title     = {From Specialization to Generalization: Instruction-tuned {LLM}s for Robust Harmful Content Mitigation},
+  author    = {Edman, Lukas and Dementieva, Daryna and Fraser, Alexander},
+  booktitle = {Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing},
+  month     = oct,
+  year      = {2026},
+  address   = {Budapest, Hungary},
+  publisher = {Association for Computational Linguistics},
+  url       = {https://arxiv.org/abs/2608.25605}
+}</pre>
+    </div>
+    <p class="cite-note">Preliminary citation based on the arXiv preprint &mdash; page numbers and the official ACL Anthology entry will be added once camera-ready proceedings are published.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="foot-affils">
+        School of Computation, Information and Technology &middot; TU Munich<br>
+        Munich Center for Machine Learning (MCML)<br>
+        Munich Data Science Institute (MDSI)
+      </div>
+      <div class="foot-links">
+        <a href="https://arxiv.org/abs/2608.25605" target="_blank" rel="noopener">arXiv</a>
+        <a href="https://arxiv.org/pdf/2608.25605" target="_blank" rel="noopener">PDF</a>
+        <a href="https://github.com/TUM-NLP/HIPPO" target="_blank" rel="noopener">GitHub</a>
+        <a href="mailto:lukas.edman@tum.de">Contact</a>
+      </div>
+    </div>
+    <div class="foot-copy">&copy; 2026 The authors. Page content summarizes the paper for convenience; the paper itself is the authoritative source. Built for TUM-NLP/HIPPO.</div>
+  </div>
+</footer>
+
+<script>
+// ---------- Table data (verified against the paper's Tables 2, 3, 4) ----------
+const t2 = [
+["AMI18 - A","Binary",81.0,74.8,70.9,71.0,"BERT","Muti and Barrón-Cedeño (2022)"],
+["AMI18 - B","Binary ×2",73.4,64.3,44.4,42.9,"BERT","Pamungkas et al. (2020b)"],
+["EDOS - A","Binary",83.7,85.0,73.0,88.4,"PaLM","Sorensen et al. (2023)"],
+["EDOS - B","Multiclass",71.2,65.5,41.9,73.3,"PaLM","Sorensen et al. (2023)"],
+["EDOS - C","Multiclass",51.8,47.5,41.0,56.1,"DeBERTa-v3","Zhou (2023)"],
+["HASOC19 - A","Binary",76.7,79.0,72.7,79.5,"RoBERTa†","Kovács et al. (2021)"],
+["HASOC19 - B","Multiclass",58.5,56.7,54.8,54.5,"BERT","Mishra and Mishra (2019)"],
+["HASOC19 - C","Binary",52.8,52.3,58.0,51.1,"BERT","Mishra and Mishra (2019)"],
+["HatEval19 - A","Binary",56.8,55.7,66.8,70.8,"Flan-UL2","Zhang et al. (2024)"],
+["HatEval19 - B","Binary ×2",80.0,77.8,35.0,62.0,"DistilBERT†","Atapattu et al. (2020)"],
+["HateXplain","Multiclass",69.5,69.1,40.8,69.9,"BERT","Kim et al. (2022)"],
+["Jigsaw","Multilabel",80.7,80.2,61.5,62.5,"BERT†","Mazari et al. (2024)"],
+["OffensEval20 - A","Binary",92.8,90.6,89.7,92.0,"RoBERTa†","Wiedemann et al. (2020)"],
+["OffensEval20 - B","Binary",66.2,62.3,67.1,74.6,"ERNIE 2.0†","Wang et al. (2020)"],
+["OffensEval20 - C","Multiclass",70.3,67.0,60.7,71.5,"ERNIE 2.0†","Wang et al. (2020)"],
+["ParaDetox","Generation",64.8,65.2,35.3,74.2,"DeepSeek","Hosseinbeigi et al. (2025)"],
+["ToxicSpans","Generation",64.3,63.1,25.9,70.8,"BERT†","Zhu et al. (2021)"],
+];
+const t2avg = ["Average","",70.3,68.0,55.3,68.5,"",""];
+
+function renderT2(rows, avg){
+  const body = document.getElementById('t2body');
+  const fmt = (v)=>v.toFixed(1);
+  rows.forEach(r=>{
+    const [name,type,hippo,indiv,gpt5,best,arch,src] = r;
+    const vals = [hippo,indiv,gpt5,best];
+    const max = Math.max(...vals);
+    const cell = (v)=> v===max ? `<span class="best">${fmt(v)}</span>` : fmt(v);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="dataset-name">${name}</td><td>${type}</td>
+      <td class="num">${cell(hippo)}</td><td class="num">${cell(indiv)}</td>
+      <td class="num">${cell(gpt5)}</td><td class="num">${cell(best)}</td>
+      <td>${arch}</td><td class="src">${src}</td>`;
+    body.appendChild(tr);
+  });
+  const [name,type,hippo,indiv,gpt5,best] = avg;
+  const tr = document.createElement('tr');
+  tr.className='avg-row';
+  tr.innerHTML = `<td>${name}</td><td>${type}</td><td class="num">${fmt(hippo)}</td><td class="num">${fmt(indiv)}</td><td class="num">${fmt(gpt5)}</td><td class="num">${fmt(best)}</td><td></td><td></td>`;
+  body.appendChild(tr);
+}
+renderT2(t2, t2avg);
+
+// Table 3: 0.6B / 4B / 32B vs Best. blue = beats Best; bold = best among the three scales
+const t3 = [
+["AMI18 - A",28.1,81.0,82.9,71.0],
+["AMI18 - B",26.0,73.4,75.5,42.9],
+["EDOS - A",23.5,83.7,87.0,88.4],
+["EDOS - B",42.0,71.2,74.7,73.3],
+["EDOS - C",27.5,51.8,57.9,56.1],
+["HASOC19 - A",22.2,76.7,76.6,79.5],
+["HASOC19 - B",31.6,58.5,58.0,54.5],
+["HASOC19 - C",47.6,52.8,52.7,51.1],
+["HatEval19 - A",20.1,56.8,59.8,70.8],
+["HatEval19 - B",41.0,80.0,79.8,62.0],
+["HateXplain",16.1,69.5,70.8,69.9],
+["Jigsaw",53.7,80.7,80.7,62.5],
+["OffensEval20 - A",27.8,92.8,92.5,92.0],
+["OffensEval20 - B",39.9,66.2,65.2,74.6],
+["OffensEval20 - C",21.1,70.3,75.4,71.5],
+["ParaDetox",10.3,64.8,65.0,74.2],
+["ToxicSpans",21.9,64.3,64.2,70.8],
+];
+const t3avg = ["Average",29.4,70.3,71.7,68.5];
+
+function renderT3(rows, avg){
+  const body = document.getElementById('t3body');
+  const fmt = (v)=>v.toFixed(1);
+  rows.forEach(r=>{
+    const [name,b06,b4,b32,best] = r;
+    const scales = [b06,b4,b32];
+    const maxScale = Math.max(...scales);
+    const cell = (v)=>{
+      let s = fmt(v);
+      const isBest = v===maxScale;
+      const beats = v>best;
+      if(isBest && beats) s = `<span class="beats"><b>${s}</b></span>`;
+      else if(beats) s = `<span class="beats">${s}</span>`;
+      else if(isBest) s = `<b>${s}</b>`;
+      return s;
+    };
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="dataset-name">${name}</td><td class="num">${fmt(b06)}</td><td class="num">${cell(b4)}</td><td class="num">${cell(b32)}</td><td class="num">${fmt(best)}</td>`;
+    body.appendChild(tr);
+  });
+  const [name,b06,b4,b32,best] = avg;
+  const tr = document.createElement('tr');
+  tr.className='avg-row';
+  const scales=[b06,b4,b32]; const maxScale=Math.max(...scales);
+  const cell=(v)=> v===maxScale ? `<span class="beats"><b>${fmt(v)}</b></span>` : fmt(v);
+  tr.innerHTML = `<td>${name}</td><td class="num">${fmt(b06)}</td><td class="num">${cell(b4)}</td><td class="num">${cell(b32)}</td><td class="num">${fmt(best)}</td>`;
+  body.appendChild(tr);
+}
+renderT3(t3, t3avg);
+
+// Table 4: Zero-shot / LOO / Full. blue = beats zero-shot; bold = best of the three
+const t4 = [
+["AMI18 - A",59.8,78.4,81.0],
+["AMI18 - B †",41.6,42.1,73.4],
+["EDOS - A",66.7,76.0,83.7],
+["EDOS - B ‡",37.9,43.4,71.2],
+["EDOS - C ‡",20.2,27.6,51.8],
+["HASOC19 - A",71.5,70.3,76.7],
+["HASOC19 - B",31.2,52.0,58.5],
+["HASOC19 - C",63.4,44.0,52.8],
+["HatEval19 - A",58.1,52.5,56.8],
+["HatEval19 - B †",33.3,29.3,80.0],
+["HateXplain",46.8,60.1,69.5],
+["Jigsaw ‡",59.2,70.1,80.7],
+["OffensEval20 - A",80.8,88.8,92.8],
+["OffensEval20 - B",72.8,66.2,66.2],
+["OffensEval20 - C",43.0,69.8,70.3],
+["ParaDetox ‡",48.0,46.4,64.8],
+["ToxicSpans",22.1,42.3,64.3],
+];
+const t4avg = ["Average",50.4,56.4,70.3];
+
+function renderT4(rows, avg){
+  const body = document.getElementById('t4body');
+  const fmt = (v)=>v.toFixed(1);
+  rows.forEach(r=>{
+    const [name,zs,loo,full] = r;
+    const trio=[zs,loo,full]; const maxV=Math.max(...trio);
+    const cell = (v, isBaseline)=>{
+      let s = fmt(v);
+      const isBest = v===maxV;
+      const beats = !isBaseline && v>zs;
+      if(isBest && beats) s = `<span class="beats"><b>${s}</b></span>`;
+      else if(beats) s = `<span class="beats">${s}</span>`;
+      else if(isBest) s = `<b>${s}</b>`;
+      return s;
+    };
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="dataset-name">${name}</td><td class="num">${fmt(zs)}</td><td class="num">${cell(loo,false)}</td><td class="num">${cell(full,false)}</td>`;
+    body.appendChild(tr);
+  });
+  const [name,zs,loo,full] = avg;
+  const tr = document.createElement('tr');
+  tr.className='avg-row';
+  const trio=[zs,loo,full]; const maxV=Math.max(...trio);
+  const cell=(v)=> v===maxV && v>zs ? `<span class="beats"><b>${fmt(v)}</b></span>` : fmt(v);
+  tr.innerHTML = `<td>${name}</td><td class="num">${fmt(zs)}</td><td class="num">${cell(loo)}</td><td class="num">${cell(full)}</td>`;
+  body.appendChild(tr);
+}
+renderT4(t4, t4avg);
+
+// ---------- Tabs ----------
+document.querySelectorAll('.tabbtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tabpanel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ---------- Copy citation ----------
+document.getElementById('copyBtn').addEventListener('click', ()=>{
+  const text = document.getElementById('bibtex').innerText;
+  navigator.clipboard.writeText(text).then(()=>{
+    const btn = document.getElementById('copyBtn');
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(()=>btn.textContent = orig, 1600);
+  });
+});
+</script>
+</body>
+</html>
